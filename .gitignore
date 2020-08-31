@@ -6,6 +6,4 @@ qgis-projects/**/*.qgz~
 qgis-projects/atlas
 scripts/.env
 .python-version
-dominode-bootstrapper/.python-version
-dominode-bootstrapper/dominode_bootstrapper/__pycache__/
-
+**/__pycache__

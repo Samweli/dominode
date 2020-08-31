@@ -20,7 +20,6 @@ minio = "^5.0.10"
 
 [tool.poetry.scripts]
 dominode-admin = 'dominode_bootstrapper.dominodeadmin:app'
-geonode-admin = 'dominode_bootstrapper.geonodeadmin:app'
 
 [build-system]
 requires = ["poetry>=0.12"]

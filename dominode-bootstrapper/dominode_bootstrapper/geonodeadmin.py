@@ -26,8 +26,10 @@ app = typer.Typer(
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_BASE_URL = 'http://localhost'
-DEFAULT_USERNAME = 'admin'
-DEFAULT_PASSWORD = 'admin'
+DEFAULT_GEONODE_USERNAME = 'admin'
+DEFAULT_GEONODE_PASSWORD = 'admin'
+DEFAULT_GEOSERVER_ADMIN_USERNAME = 'admin'
+DEFAULT_GEOSERVER_ADMIN_PASSWORD = 'geoserver'
 _ANY = '*'
 
 
@@ -43,8 +45,8 @@ class GeoNodeManager:
             self,
             client: httpx.Client,
             base_url: str = DEFAULT_BASE_URL,
-            username: str = DEFAULT_USERNAME,
-            password: str = DEFAULT_PASSWORD,
+            username: str = DEFAULT_GEONODE_USERNAME,
+            password: str = DEFAULT_GEONODE_PASSWORD,
             geoserver_client_id: str = None,
             geoserver_client_secret: str = None,
     ):
@@ -155,6 +157,8 @@ class GeoServerManager:
             self,
             client: httpx.Client,
             base_url: str,
+            username: str = DEFAULT_GEOSERVER_ADMIN_USERNAME,
+            password: str = DEFAULT_GEOSERVER_ADMIN_PASSWORD,
             access_token: typing.Optional[str] = None
     ):
         self.client = client
@@ -162,7 +166,9 @@ class GeoServerManager:
             'Accept': 'application/json',
             'Content-Type': 'application/json'
         }
-        self.base_url = f'{base_url}/geoserver'
+        self.base_url = base_url
+        self.username = username
+        self.password = password
         self.access_token = access_token
 
     @classmethod
@@ -177,34 +183,37 @@ class GeoServerManager:
     def list_workspaces(self):
         response = self.client.get(
             f'{self.base_url}/rest/workspaces',
-            auth=(DEFAULT_USERNAME, DEFAULT_PASSWORD)
+            auth=(self.username, self.password)
         )
         return response.json()
 
     def create_workspace(self, name):
         response = self.client.post(
             f'{self.base_url}/rest/workspaces',
-            auth=(DEFAULT_USERNAME, DEFAULT_PASSWORD),
+            auth=(self.username, self.password),
             json={"name": name}
         )
         return response.json()
+
     def get_workspace(self, name):
         response = self.client.post(
             f'{self.base_url}/rest/workspaces/{name}',
-            auth=(DEFAULT_USERNAME, DEFAULT_PASSWORD)
+            auth=(self.username, self.password)
         )
         if response.status_code != 200:
             return None
         return response.json()
 
-    def create_postgis_store(self,
-                             workspace_name,
-                             store_name,
-                             host,
-                             port,
-                             database,
-                             user,
-                             password):
+    def create_postgis_store(
+            self,
+            workspace_name: str,
+            store_name: str,
+            host: str,
+            port: str,
+            database: str,
+            user: str,
+            password: str
+    ):
         datastore = {
            "name": store_name,
            "connectionParameters": {
@@ -218,15 +227,16 @@ class GeoServerManager:
         }
         response = self.client.post(
             f'{self.base_url}/rest/workspaces/{workspace_name}/datastores',
-            auth=(DEFAULT_USERNAME, DEFAULT_PASSWORD),
+            auth=(self.username, self.password),
             json=datastore
         )
+        response.raise_for_status()
         return response.json()
 
     def list_geofence_admin_rules(self) -> typing.List:
         response = self.client.get(
             f'{self.base_url}/rest/geofence/adminrules',
-            auth=(DEFAULT_USERNAME, DEFAULT_PASSWORD)
+            auth=(self.username, self.password)
         )
         response.raise_for_status()
         return response.json().get('rules', [])
@@ -243,7 +253,7 @@ class GeoServerManager:
             access = GeofenceAccess.USER
         response = self.client.post(
             f'{self.base_url}/rest/geofence/adminrules',
-            auth=(DEFAULT_USERNAME, DEFAULT_PASSWORD),
+            auth=(self.username, self.password),
             json={
                 'priority': 0,
                 'userName': _ANY,
@@ -260,14 +270,15 @@ class GeoServerManager:
 @app.command()
 def bootstrap(
         base_url: str = DEFAULT_BASE_URL,
-        username: str = DEFAULT_USERNAME,
-        password: str = DEFAULT_PASSWORD
+        geonode_username: str = DEFAULT_GEONODE_USERNAME,
+        geonode_password: str = DEFAULT_GEONODE_PASSWORD,
+        geoserver_username: str = DEFAULT_GEOSERVER_ADMIN_USERNAME,
+        geoserver_password: str = DEFAULT_GEOSERVER_ADMIN_PASSWORD
 ):
     """Perform initial bootstrap of GeoNode and GeoServer"""
     internal_group_name = 'dominode-internal'
     with httpx.Client() as client:
-        geonode_manager = GeoNodeManager(client, base_url, username, password)
-        geoserver_manager = GeoServerManager(client, base_url)
+        geonode_manager = GeoNodeManager(client, base_url, geonode_username, geonode_password)
         geonode_manager.login()
         existing_groups = geonode_manager.get_existing_groups()
         for department in DepartmentName:
@@ -275,7 +286,6 @@ def bootstrap(
                 geonode_manager,
                 department, [i['title'] for i in existing_groups]
             )
-            _bootstrap_department_in_geoserver(geoserver_manager, department)
         typer.echo(f'Creating group {internal_group_name!r}...')
         geonode_manager.create_group(
             internal_group_name,
@@ -283,7 +293,10 @@ def bootstrap(
         )
         geonode_manager.logout()
 
-
+    with httpx.Client() as client:
+        geoserver_manager = GeoServerManager(client, base_url, geoserver_username, geoserver_password)
+        for department in DepartmentName:
+            _bootstrap_department_in_geoserver(geoserver_manager, department)
 
     pass
 
@@ -292,8 +305,8 @@ def bootstrap(
 def add_department(
         department: DepartmentName,
         base_url: str = DEFAULT_BASE_URL,
-        username: str = DEFAULT_USERNAME,
-        password: str = DEFAULT_PASSWORD,
+        username: str = DEFAULT_GEONODE_USERNAME,
+        password: str = DEFAULT_GEONODE_PASSWORD,
 ):
     with httpx.Client() as client:
         manager = GeoNodeManager(client, base_url, username, password)
