@@ -152,6 +152,7 @@ class GeoServerManager:
     client: httpx.Client
     base_url: str
     access_token: str
+    headers: dict
 
     def __init__(
             self,
@@ -162,14 +163,14 @@ class GeoServerManager:
             access_token: typing.Optional[str] = None
     ):
         self.client = client
-        self.client.headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        }
         self.base_url = base_url
         self.username = username
         self.password = password
         self.access_token = access_token
+        self.headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
 
     @classmethod
     def from_geonode_manager(cls, geonode_manager: GeoNodeManager):
@@ -181,6 +182,8 @@ class GeoServerManager:
         )
 
     def list_workspaces(self):
+        self.client.headers = self.headers
+
         response = self.client.get(
             f'{self.base_url}/rest/workspaces',
             auth=(self.username, self.password)
@@ -188,6 +191,8 @@ class GeoServerManager:
         return response.json()
 
     def create_workspace(self, name):
+        self.client.headers = self.headers
+
         response = self.client.post(
             f'{self.base_url}/rest/workspaces',
             auth=(self.username, self.password),
@@ -196,6 +201,8 @@ class GeoServerManager:
         return response.json()
 
     def get_workspace(self, name):
+        self.client.headers = self.headers
+
         response = self.client.post(
             f'{self.base_url}/rest/workspaces/{name}',
             auth=(self.username, self.password)
@@ -225,6 +232,8 @@ class GeoServerManager:
               "dbtype": "postgis"
            }
         }
+        self.client.headers = self.headers
+
         response = self.client.post(
             f'{self.base_url}/rest/workspaces/{workspace_name}/datastores',
             auth=(self.username, self.password),
@@ -234,6 +243,8 @@ class GeoServerManager:
         return response.json()
 
     def list_geofence_admin_rules(self) -> typing.List:
+        self.client.headers = self.headers
+
         response = self.client.get(
             f'{self.base_url}/rest/geofence/adminrules',
             auth=(self.username, self.password)
@@ -251,6 +262,9 @@ class GeoServerManager:
             access = GeofenceAccess.ADMIN
         else:
             access = GeofenceAccess.USER
+
+        self.client.headers = self.headers
+
         response = self.client.post(
             f'{self.base_url}/rest/geofence/adminrules',
             auth=(self.username, self.password),
@@ -281,10 +295,16 @@ def bootstrap(
         geonode_manager = GeoNodeManager(client, base_url, geonode_username, geonode_password)
         geonode_manager.login()
         existing_groups = geonode_manager.get_existing_groups()
+        geoserver_manager = GeoServerManager(client, base_url, geoserver_username, geoserver_password)
+
         for department in DepartmentName:
             _add_department(
                 geonode_manager,
                 department, [i['title'] for i in existing_groups]
+            )
+            _bootstrap_department_in_geoserver(
+                geoserver_manager,
+                department
             )
         typer.echo(f'Creating group {internal_group_name!r}...')
         geonode_manager.create_group(
@@ -293,10 +313,6 @@ def bootstrap(
         )
         geonode_manager.logout()
 
-    with httpx.Client() as client:
-        geoserver_manager = GeoServerManager(client, base_url, geoserver_username, geoserver_password)
-        for department in DepartmentName:
-            _bootstrap_department_in_geoserver(geoserver_manager, department)
 
     pass
 
