@@ -21,6 +21,11 @@ def bootstrap(
         db_user_password: str,
         minio_access_key: str,
         minio_secret_key: str,
+        geonode_base_url: str,
+        geonode_username: str,
+        geonode_password: str,
+        geoserver_username: str,
+        geoserver_password: str,
         db_name: typing.Optional[str] = None,
         db_host: str = 'localhost',
         db_port: int = 5432,
@@ -30,20 +35,32 @@ def bootstrap(
         minio_protocol: str = 'https'
 ):
     typer.echo('Bootstrapping DomiNode database...')
-    dbadmin.bootstrap(
-        db_user_name,
-        db_user_password,
-        db_name or db_user_name,
-        db_host,
-        db_port
-    )
+    try:
+        dbadmin.bootstrap(
+            db_user_name,
+            db_user_password,
+            db_name or db_user_name,
+            db_host,
+            db_port
+        )
+    except Exception as e:
+        typer.echo(f'Error: {e}...skipping')
+        pass
     typer.echo('Bootstrapping DomiNode minIO...')
-    minioadmin.bootstrap(
-        minio_access_key,
-        minio_secret_key,
-        minio_alias,
-        minio_host,
-        minio_port,
-        minio_protocol
+    try:
+        minioadmin.bootstrap(
+            minio_access_key,
+            minio_secret_key,
+            minio_alias,
+            minio_host,
+            minio_port,
+            minio_protocol
+        )
+    except Exception as e:
+        typer.echo(f'Error: {e}...skipping')
+        pass
+
+    geonodeadmin.bootstrap(
+
     )
     typer.echo('Done!')

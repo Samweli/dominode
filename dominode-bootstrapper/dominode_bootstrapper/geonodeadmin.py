@@ -25,7 +25,8 @@ app = typer.Typer(
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_BASE_URL = 'http://localhost'
+DEFAULT_GEONODE_BASE_URL = 'http://localhost'
+DEFAULT_GEOSERVER_BASE_URL = 'http://localhost/geoserver'
 DEFAULT_GEONODE_USERNAME = 'admin'
 DEFAULT_GEONODE_PASSWORD = 'admin'
 DEFAULT_GEOSERVER_ADMIN_USERNAME = 'admin'
@@ -44,7 +45,7 @@ class GeoNodeManager:
     def __init__(
             self,
             client: httpx.Client,
-            base_url: str = DEFAULT_BASE_URL,
+            base_url: str = DEFAULT_GEONODE_BASE_URL,
             username: str = DEFAULT_GEONODE_USERNAME,
             password: str = DEFAULT_GEONODE_PASSWORD,
             geoserver_client_id: str = None,
@@ -188,6 +189,7 @@ class GeoServerManager:
             f'{self.base_url}/rest/workspaces',
             auth=(self.username, self.password)
         )
+        response.raise_for_status()
         return response.json()
 
     def create_workspace(self, name):
@@ -196,14 +198,20 @@ class GeoServerManager:
         response = self.client.post(
             f'{self.base_url}/rest/workspaces',
             auth=(self.username, self.password),
-            json={"name": name}
+            json={
+                    "workspace": {
+                        "name": name
+                    }
+                }
         )
-        return response.json()
+        if response.status_code != 201:
+            return False
+        return True
 
     def get_workspace(self, name):
         self.client.headers = self.headers
 
-        response = self.client.post(
+        response = self.client.get(
             f'{self.base_url}/rest/workspaces/{name}',
             auth=(self.username, self.password)
         )
@@ -283,7 +291,8 @@ class GeoServerManager:
 
 @app.command()
 def bootstrap(
-        base_url: str = DEFAULT_BASE_URL,
+        geonode_base_url: str = DEFAULT_GEONODE_BASE_URL,
+        geoserver_base_url: str = DEFAULT_GEOSERVER_BASE_URL,
         geonode_username: str = DEFAULT_GEONODE_USERNAME,
         geonode_password: str = DEFAULT_GEONODE_PASSWORD,
         geoserver_username: str = DEFAULT_GEOSERVER_ADMIN_USERNAME,
@@ -292,16 +301,17 @@ def bootstrap(
     """Perform initial bootstrap of GeoNode and GeoServer"""
     internal_group_name = 'dominode-internal'
     with httpx.Client() as client:
-        geonode_manager = GeoNodeManager(client, base_url, geonode_username, geonode_password)
+        geonode_manager = GeoNodeManager(client, geonode_base_url, geonode_username, geonode_password)
         geonode_manager.login()
         existing_groups = geonode_manager.get_existing_groups()
-        geoserver_manager = GeoServerManager(client, base_url, geoserver_username, geoserver_password)
+        geoserver_manager = GeoServerManager(client, geoserver_base_url, geoserver_username, geoserver_password)
 
         for department in DepartmentName:
             _add_department(
                 geonode_manager,
                 department, [i['title'] for i in existing_groups]
             )
+            typer.echo(f'Bootstrapping deparment {department.value} in geoserver')
             _bootstrap_department_in_geoserver(
                 geoserver_manager,
                 department
@@ -320,7 +330,7 @@ def bootstrap(
 @app.command()
 def add_department(
         department: DepartmentName,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: str = DEFAULT_GEONODE_BASE_URL,
         username: str = DEFAULT_GEONODE_USERNAME,
         password: str = DEFAULT_GEONODE_PASSWORD,
 ):
@@ -398,6 +408,7 @@ def _bootstrap_department_in_geoserver(
     # 1. create the workspace
 
     workspace = manager.get_workspace(workspace_name)
+    typer.echo(f'Workspace {workspace}')
     if workspace is None:
         manager.create_workspace(workspace_name)
     else:
@@ -408,7 +419,11 @@ def _bootstrap_department_in_geoserver(
         existing_rules = manager.list_geofence_admin_rules()
         group_name = get_geoserver_group_name(department)
         role_name = f'ROLE_{group_name}'
+
+        typer.echo(f'Existing rules {existing_rules}, role name {role_name}')
+
         if role_name not in [i['roleName'] for i in existing_rules]:
+            typer.echo(f'Creating Geoserver admin rule for {department.value}...')
             manager.create_geofence_admin_rule(
                 department.value, role_name, UserRole.EDITOR)
         # 3. create the postgis db store
